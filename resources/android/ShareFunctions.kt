@@ -83,6 +83,17 @@ object ShareFunctions {
 
                 val intent = Intent(Intent.ACTION_SEND).apply {
                     if (!filePath.isNullOrEmpty()) {
+                        if (filePath.startsWith("content://")) {                                                                                                   
+                             // Android 10+ MediaStore returns a content URI, not a file path                                                                       
+                             val uri = android.net.Uri.parse(filePath)                                                                                              
+                             val mimeType = context.contentResolver.getType(uri) ?: "image/jpeg"                                                                    
+                             type = mimeType                                                                                                                        
+                             putExtra(Intent.EXTRA_STREAM, uri)                                                                                                     
+                             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)                                                                                        
+                            if (title.isNotEmpty()) putExtra(Intent.EXTRA_SUBJECT, title)                                                                          
+                            if (message.isNotEmpty()) putExtra(Intent.EXTRA_TEXT, message)                                                                         
+                             Log.d("ShareFunctions.File", "Sharing content URI: $filePath ($mimeType)")                                                             
+                       } else {  
                         val file = File(filePath)
 
                         if (file.exists()) {
@@ -131,6 +142,7 @@ object ShareFunctions {
                                 message
                             }
                             putExtra(Intent.EXTRA_TEXT, textToShare)
+                        }
                         }
                     } else {
                         type = "text/plain"

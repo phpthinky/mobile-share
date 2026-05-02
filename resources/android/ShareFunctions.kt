@@ -2,9 +2,13 @@ package com.nativephp.share
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.util.Base64
 import android.util.Log
 import androidx.core.content.FileProvider
 import com.nativephp.mobile.bridge.BridgeFunction
+import java.io.ByteArrayOutputStream
 import java.io.File
 
 /**
@@ -206,6 +210,81 @@ object ShareFunctions {
             } catch (e: Exception) {
                 Log.e("ShareFunctions.File", "Error cleaning up old share files: ${e.message}", e)
             }
+        }
+    }
+
+    /**
+     * Share a base64 encoded image directly via the native share sheet,
+     * writing to a temp cache file instead of the gallery (no MediaStore write).
+     * Parameters:
+     *   - data: string - Base64 encoded image (with or without data URL prefix)
+     *   - title: (optional) string - Share dialog title / subject
+     *   - message: (optional) string - Text message to share
+     *   - quality: (optional) int - JPEG compression 1-100 (default: 75)
+     *   - filename: (optional) string - Temp filename hint
+     */
+    class Base64(private val context: Context) : BridgeFunction {
+        override fun execute(parameters: Map<String, Any>): Map<String, Any> {
+            val rawData = parameters["data"] as? String
+            val title = parameters["title"] as? String ?: ""
+            val message = parameters["message"] as? String ?: ""
+            val quality = (parameters["quality"] as? Number)?.toInt()?.coerceIn(1, 100) ?: 75
+            var filename = parameters["filename"] as? String
+
+            Log.d("ShareFunctions.Base64", "Share base64 requested - quality: $quality")
+
+            if (rawData.isNullOrEmpty()) {
+                return mapOf("error" to "'data' parameter is required")
+            }
+
+            try {
+                val base64Data = if (rawData.contains(",")) rawData.substringAfter(",") else rawData
+
+                val imageBytes = Base64.decode(base64Data, Base64.DEFAULT)
+                val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+                    ?: return mapOf("error" to "Failed to decode image")
+
+                val out = ByteArrayOutputStream()
+                bitmap.compress(Bitmap.CompressFormat.JPEG, quality, out)
+                bitmap.recycle()
+                val jpegBytes = out.toByteArray()
+
+                if (filename.isNullOrEmpty()) {
+                    filename = "share_${System.currentTimeMillis()}.jpg"
+                } else if (!filename.endsWith(".jpg", ignoreCase = true) && !filename.endsWith(".jpeg", ignoreCase = true)) {
+                    filename = "${filename.substringBeforeLast(".")}.jpg"
+                }
+
+                val shareDir = File(context.cacheDir, "share")
+                shareDir.mkdirs()
+                val tempFile = File(shareDir, filename)
+                tempFile.outputStream().use { it.write(jpegBytes) }
+
+                val uri = FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    tempFile
+                )
+
+                val intent = Intent(Intent.ACTION_SEND).apply {
+                    type = "image/jpeg"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    if (title.isNotEmpty()) putExtra(Intent.EXTRA_SUBJECT, title)
+                    if (message.isNotEmpty()) putExtra(Intent.EXTRA_TEXT, message)
+                }
+
+                val chooser = Intent.createChooser(intent, title.ifEmpty { "Share" })
+                chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(chooser)
+
+                Log.d("ShareFunctions.Base64", "Share sheet opened: ${tempFile.name}")
+            } catch (e: Exception) {
+                Log.e("ShareFunctions.Base64", "Error: ${e.message}", e)
+                return mapOf("error" to (e.message ?: "Unknown error"))
+            }
+
+            return emptyMap()
         }
     }
 }

@@ -12,6 +12,13 @@
             "android": "com.nativephp.share.ShareFunctions.File",
             "ios": "ShareFunctions.File",
             "description": "Show native share sheet for files"
+        },
+
+        {
+            "name": "Share.Base64",
+            "android": "com.nativephp.share.ShareFunctions.Base64",
+            "ios": "ShareFunctions.Base64",
+            "description": "Show native share sheet for base64"
         }
     ],
     "android": {
